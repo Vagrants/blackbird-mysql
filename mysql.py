@@ -41,6 +41,10 @@ class ConcreteJob(base.JobBase):
         if 'global_status' in self.components:
             self.get_global_status(conn)
 
+        # get innodb information
+        if 'innodb_status' in self.components:
+            self.get_innodb_status(conn)
+
         # get slave status
         if 'slave_status' in self.components:
             self.get_slave_status(conn)
@@ -151,10 +155,6 @@ class ConcreteJob(base.JobBase):
         cursor.close()
 
         self._adjust_queue('global_variables', result)
-
-        # get innodb information
-        if result['have_innodb'].lower() == 'yes':
-            self.get_innodb_status(conn)
 
     def get_global_status(self, conn):
 
