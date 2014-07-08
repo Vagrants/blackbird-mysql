@@ -1,0 +1,5 @@
+include mysql.py
+include mysql.cfg
+include README.md
+include CHANGELOG.md
+include PROJECT.txt
