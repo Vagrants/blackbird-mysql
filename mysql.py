@@ -1,5 +1,5 @@
 # -*- encoding: utf-8 -*-
-# pylint: disable=C0111,C0301,R0903,C0326
+# pylint: disable=C0111,C0301,R0903,C0326,W0702
 
 __VERSION__ = '0.1.0'
 
@@ -71,11 +71,12 @@ class ConcreteJob(base.JobBase):
             conn = MySQLdb.connect(self.options['mysqlhost'],
                                    self.options['mysqluser'],
                                    self.options['mysqlpass'])
-        except OperationalError:
+        except MySQLdb.OperationalError, _ex:
             self.logger.error(
-                'Can not connect to mysql {user}@{host}'
+                'Can not connect to mysql {user}@{host} [{error}]'
                 ''.format(user=self.options['mysqluser'],
-                          host=self.options['mysqlhost'])
+                          host=self.options['mysqlhost'],
+                          error=_ex)
             )
             self._enqueue('mysql.alive', 0)
             raise
@@ -139,13 +140,11 @@ class ConcreteJob(base.JobBase):
             category = 'innodb_stats.{0}'.format(k)
             self._adjust_queue(category, _innodb_result.results[k])
 
-    def _adjust_queue(self, category, dict):
+    def _adjust_queue(self, _category, _dict):
 
-        for (k, v) in dict.items():
-            item_key = ('mysql.{category}[{k}]'
-                        '' .format(category=category, k=k)
-                       )
-            self._enqueue(item_key, v)
+        for _key, _val in _dict.items():
+            item_key = 'mysql.{c}[{k}]'.format(c=_category, k=_key)
+            self._enqueue(item_key, _val)
 
     def get_global_variables(self, conn):
 
@@ -189,14 +188,14 @@ class ConcreteJob(base.JobBase):
 
         _ignore_databases = ['information_schema', 'performance_schema', 'test', 'mysql']
 
-        for db in result.keys():
-            if db in _ignore_databases:
+        for _db in result.keys():
+            if _db in _ignore_databases:
                 continue
             else:
-                self._enqueue_lld(db, result[db])
+                self._enqueue_lld(_db, result[_db])
 
 
-class InnoDBParse:
+class InnoDBParse(object):
 
     results = {}
     data = {}
@@ -214,20 +213,22 @@ class InnoDBParse:
         self.results['buffer_pool_and_memory'] = self.parse_bp_and_mem(parsed['BUFFER POOL AND MEMORY'])
         self.results['row_operations']         = self.parse_row_operations(parsed['ROW OPERATIONS'])
 
-    def parse_innodb_status(self, innodb_status):
+    @staticmethod
+    def parse_innodb_status(innodb_status):
 
-        dict = {}
+        _dict = {}
         regex = "-+\n([A-Z /]*)\n-+"
         keys = re.compile(regex).findall(innodb_status)
         values = re.sub(regex, "\n\n\n", innodb_status).split("\n\n\n\n")[1:]
 
         i=0
         for key in keys:
-            dict[key] = values[i].lstrip().rstrip()
+            _dict[key] = values[i].lstrip().rstrip()
             i += 1
-        return dict
+        return _dict
 
-    def parse_semaphores(self, text):
+    @staticmethod
+    def parse_semaphores(text):
         """
         ----------
         SEMAPHORES
@@ -238,38 +239,39 @@ class InnoDBParse:
         RW-excl spins 499, rounds 74761, OS waits 2354
         Spin rounds per wait: 2.34 mutex, 29.82 RW-shared, 149.82 RW-excl
         """
-        dict = {}
+        _dict = {}
         regex = (
-                "OS WAIT ARRAY INFO: reservation count (\d+), signal count (\d+)\n"
-                "Mutex spin waits (\d+), rounds (\d+), OS waits (\d+)\n"
-                "RW-shared spins (\d+), rounds (\d+), OS waits (\d+)\n"
-                "RW-excl spins (\d+), rounds (\d+), OS waits (\d+)\n"
-                "Spin rounds per wait: (\d+\.\d+) mutex, (\d+\.\d+) RW-shared, (\d+\.\d+) RW-excl"
-                )
+            r"OS WAIT ARRAY INFO: reservation count (\d+), signal count (\d+)\n"
+            r"Mutex spin waits (\d+), rounds (\d+), OS waits (\d+)\n"
+            r"RW-shared spins (\d+), rounds (\d+), OS waits (\d+)\n"
+            r"RW-excl spins (\d+), rounds (\d+), OS waits (\d+)\n"
+            r"Spin rounds per wait: (\d+\.\d+) mutex, (\d+\.\d+) RW-shared, (\d+\.\d+) RW-excl"
+        )
 
         try:
             result = re.compile(regex).findall(text)[0]
 
-            dict['os_wait_reservation_count']      = result[0]
-            dict['os_wait_signal_count']           = result[1]
-            dict['mutex_spin_waits']               = result[2]
-            dict['mutex_rounds']                   = result[3]
-            dict['mutex_os_waits']                 = result[4]
-            dict['rw_shared_spins']                = result[5]
-            dict['rw_shared_rounds']               = result[6]
-            dict['rw_shared_os_waits']             = result[7]
-            dict['rw_excl_spins']                  = result[8]
-            dict['rw_excl_rounds']                 = result[9]
-            dict['rw_excl_os_waits']               = result[10]
-            dict['spin_rounds_per_wait_mutex']     = result[11]
-            dict['spin_rounds_per_wait_rw_shared'] = result[12]
-            dict['spin_rounds_per_wait_rw_excl']   = result[13]
+            _dict['os_wait_reservation_count']      = result[0]
+            _dict['os_wait_signal_count']           = result[1]
+            _dict['mutex_spin_waits']               = result[2]
+            _dict['mutex_rounds']                   = result[3]
+            _dict['mutex_os_waits']                 = result[4]
+            _dict['rw_shared_spins']                = result[5]
+            _dict['rw_shared_rounds']               = result[6]
+            _dict['rw_shared_os_waits']             = result[7]
+            _dict['rw_excl_spins']                  = result[8]
+            _dict['rw_excl_rounds']                 = result[9]
+            _dict['rw_excl_os_waits']               = result[10]
+            _dict['spin_rounds_per_wait_mutex']     = result[11]
+            _dict['spin_rounds_per_wait_rw_shared'] = result[12]
+            _dict['spin_rounds_per_wait_rw_excl']   = result[13]
         except:
             pass
 
-        return dict
+        return _dict
 
-    def parse_background_thread(self, text):
+    @staticmethod
+    def parse_background_thread(text):
         """
         -----------------
         BACKGROUND THREAD
@@ -277,27 +279,29 @@ class InnoDBParse:
         srv_master_thread loops: 849820 1_second, 849819 sleeps, 84080 10_second, 9293 background, 9293 flush
         srv_master_thread log flush and writes: 851861
         """
-        dict = {}
+        _dict = {}
         regex = (
-                "srv_master_thread loops: (\d+) 1_second, (\d+) sleeps, (\d+) 10_second, (\d+) background, (\d+) flush\n"
-                "srv_master_thread log flush and writes: (\d+)"
-                )
+            r"srv_master_thread loops: (\d+) 1_second, (\d+) sleeps, (\d+) 10_second, (\d+) background, (\d+) flush\n"
+            r"srv_master_thread log flush and writes: (\d+)"
+        )
+
         try:
             result = re.compile(regex).findall(text)[0]
 
-            dict['srv_master_thread_loops_1_second']       = result[0]
-            dict['srv_master_thread_loops_sleeps']         = result[1]
-            dict['srv_master_thread_loops_10_second']      = result[2]
-            dict['srv_master_thread_loops_background']     = result[3]
-            dict['srv_master_thread_loops_flush']          = result[4]
-            dict['srv_master_thread_log_flush_and_writes'] = result[5]
+            _dict['srv_master_thread_loops_1_second']       = result[0]
+            _dict['srv_master_thread_loops_sleeps']         = result[1]
+            _dict['srv_master_thread_loops_10_second']      = result[2]
+            _dict['srv_master_thread_loops_background']     = result[3]
+            _dict['srv_master_thread_loops_flush']          = result[4]
+            _dict['srv_master_thread_log_flush_and_writes'] = result[5]
 
         except:
             pass
 
-        return dict
+        return _dict
 
-    def parse_transanctions(self, text):
+    @staticmethod
+    def parse_transanctions(text):
         """
         ------------
         TRANSACTIONS
@@ -310,26 +314,28 @@ class InnoDBParse:
         (snip)
         ...
         """
-        dict = {}
+        _dict = {}
         regex = (
-                "Trx id counter ([0-9A-F]+)\n"
-                "Purge done for trx's n:o < ([0-9A-F]+) undo n:o < ([0-9A-F]+)\n"
-                "History list length (\d+)"
-                )
+            r"Trx id counter ([0-9A-F]+)\n"
+            r"Purge done for trx's n:o < ([0-9A-F]+) undo n:o < ([0-9A-F]+)\n"
+            r"History list length (\d+)"
+        )
+
         try:
             result = re.compile(regex).findall(text)[0]
 
-            dict['trx_id_counter']       = result[0]
-            dict['purge_done_for_trx']   = result[1]
-            dict['purge_done_for_undo']  = result[2]
-            dict['history_list_length']  = result[3]
+            _dict['trx_id_counter']       = result[0]
+            _dict['purge_done_for_trx']   = result[1]
+            _dict['purge_done_for_undo']  = result[2]
+            _dict['history_list_length']  = result[3]
 
         except:
             pass
 
-        return dict
+        return _dict
 
-    def parse_file_io(self, text):
+    @staticmethod
+    def parse_file_io(text):
         """
         --------
         FILE I/O
@@ -343,38 +349,40 @@ class InnoDBParse:
         166 OS file reads, 4895744 OS file writes, 726684 OS fsyncs
         0.00 reads/s, 0 avg bytes/read, 0.50 writes/s, 0.25 fsyncs/s
         """
-        dict = {}
+        _dict = {}
         regex = (
-                "Pending normal aio reads: (\d+) \[.*\] , aio writes: (\d+) \[.*\] ,\n"
-                " ibuf aio reads: (\d+), log i/o's: (\d+), sync i/o's: (\d+)\n"
-                "Pending flushes \(fsync\) log: (\d+); buffer pool: (\d+)\n"
-                "(\d+) OS file reads, (\d+) OS file writes, (\d+) OS fsyncs\n"
-                "(\d+\.\d+) reads/s, (\d+) avg bytes/read, (\d+\.\d+) writes/s, (\d+\.\d+) fsyncs/s"
-                )
+            r"Pending normal aio reads: (\d+) \[.*\] , aio writes: (\d+) \[.*\] ,\n"
+            r" ibuf aio reads: (\d+), log i/o's: (\d+), sync i/o's: (\d+)\n"
+            r"Pending flushes \(fsync\) log: (\d+); buffer pool: (\d+)\n"
+            r"(\d+) OS file reads, (\d+) OS file writes, (\d+) OS fsyncs\n"
+            r"(\d+\.\d+) reads/s, (\d+) avg bytes/read, (\d+\.\d+) writes/s, (\d+\.\d+) fsyncs/s"
+        )
+
         try:
             result = re.compile(regex).findall(text)[0]
 
-            dict['pending_normal_aio_reads']      = result[0]
-            dict['pending_normal_aio_writes']     = result[1]
-            dict['pending_normal_ibuf_aio_reads'] = result[2]
-            dict['pending_normal_log_io']         = result[3]
-            dict['pending_normal_sync_io']        = result[4]
-            dict['pending_flush_log']             = result[4]
-            dict['pending_flush_buffer_pool']     = result[5]
-            dict['os_file_reads']                 = result[6]
-            dict['os_file_writes']                = result[7]
-            dict['os_file_fsyncs']                = result[8]
-            dict['reads_per_sec']                 = result[9]
-            dict['avg_bytes_per_read']            = result[10]
-            dict['writes_per_sec']                = result[11]
-            dict['fsyncs_per_sec']                = result[12]
+            _dict['pending_normal_aio_reads']      = result[0]
+            _dict['pending_normal_aio_writes']     = result[1]
+            _dict['pending_normal_ibuf_aio_reads'] = result[2]
+            _dict['pending_normal_log_io']         = result[3]
+            _dict['pending_normal_sync_io']        = result[4]
+            _dict['pending_flush_log']             = result[4]
+            _dict['pending_flush_buffer_pool']     = result[5]
+            _dict['os_file_reads']                 = result[6]
+            _dict['os_file_writes']                = result[7]
+            _dict['os_file_fsyncs']                = result[8]
+            _dict['reads_per_sec']                 = result[9]
+            _dict['avg_bytes_per_read']            = result[10]
+            _dict['writes_per_sec']                = result[11]
+            _dict['fsyncs_per_sec']                = result[12]
 
         except:
             pass
 
-        return dict
+        return _dict
 
-    def parse_ibuf_hi(self, text):
+    @staticmethod
+    def parse_ibuf_hi(text):
         """
         -------------------------------------
         INSERT BUFFER AND ADAPTIVE HASH INDEX
@@ -387,40 +395,41 @@ class InnoDBParse:
         Hash table size 1940399, node heap has 156 buffer(s)
         4.87 hash searches/s, 9.00 non-hash searches/s
         """
-        dict = {}
+        _dict = {}
         regex = (
-                "Ibuf: size (\d+), free list len (\d+), seg size (\d+), (\d+) merges\n"
-                "merged operations:\n"
-                " insert (\d+), delete mark (\d+), delete (\d+)\n"
-                "discarded operations:\n"
-                " insert (\d+), delete mark (\d+), delete (\d+)\n"
-                "Hash table size (\d+), node heap has (\d+) buffer\(s\)\n"
-                "(\d+\.\d+) hash searches/s, (\d+\.\d+) non-hash searches/s"
-                )
+            r"Ibuf: size (\d+), free list len (\d+), seg size (\d+), (\d+) merges\n"
+            r"merged operations:\n"
+            r" insert (\d+), delete mark (\d+), delete (\d+)\n"
+            r"discarded operations:\n"
+            r" insert (\d+), delete mark (\d+), delete (\d+)\n"
+            r"Hash table size (\d+), node heap has (\d+) buffer\(s\)\n"
+            r"(\d+\.\d+) hash searches/s, (\d+\.\d+) non-hash searches/s"
+        )
         try:
             result = re.compile(regex).findall(text)[0]
 
-            dict['ibuf_size']                  = result[0]
-            dict['ibuf_free_list_len']         = result[1]
-            dict['ibuf_seg_size']              = result[2]
-            dict['ibuf_merges']                = result[3]
-            dict['ibuf_merged_insert']         = result[4]
-            dict['ibuf_merged_delete_mark']    = result[5]
-            dict['ibuf_merged_delete']         = result[6]
-            dict['ibuf_discarded_insert']      = result[7]
-            dict['ibuf_discarded_delete_mark'] = result[8]
-            dict['ibuf_discarded_delete']      = result[9]
-            dict['hash_table_size']            = result[10]
-            dict['node_heap_buffers']          = result[11]
-            dict['hash_searches_per_sec']      = result[12]
-            dict['non_hash_searches_per_sec']  = result[13]
+            _dict['ibuf_size']                  = result[0]
+            _dict['ibuf_free_list_len']         = result[1]
+            _dict['ibuf_seg_size']              = result[2]
+            _dict['ibuf_merges']                = result[3]
+            _dict['ibuf_merged_insert']         = result[4]
+            _dict['ibuf_merged_delete_mark']    = result[5]
+            _dict['ibuf_merged_delete']         = result[6]
+            _dict['ibuf_discarded_insert']      = result[7]
+            _dict['ibuf_discarded_delete_mark'] = result[8]
+            _dict['ibuf_discarded_delete']      = result[9]
+            _dict['hash_table_size']            = result[10]
+            _dict['node_heap_buffers']          = result[11]
+            _dict['hash_searches_per_sec']      = result[12]
+            _dict['non_hash_searches_per_sec']  = result[13]
 
         except:
             pass
 
-        return dict
+        return _dict
 
-    def parse_log(self, text):
+    @staticmethod
+    def parse_log(text):
         """
         ---
         LOG
@@ -431,32 +440,33 @@ class InnoDBParse:
         0 pending log writes, 0 pending chkp writes
         710948 log i/o's done, 0.50 log i/o's/second
         """
-        dict = {}
+        _dict = {}
         regex = (
-                "Log sequence number\s+(\d+)\n"
-                "Log flushed up to\s+(\d+)\n"
-                "Last checkpoint at\s+(\d+)\n"
-                "(\d+) pending log writes, (\d+) pending chkp writes\n"
-                "(\d+) log i/o's done, (\d+\.\d+) log i/o's/second"
-                )
+            r"Log sequence number\s+(\d+)\n"
+            r"Log flushed up to\s+(\d+)\n"
+            r"Last checkpoint at\s+(\d+)\n"
+            r"(\d+) pending log writes, (\d+) pending chkp writes\n"
+            r"(\d+) log i/o's done, (\d+\.\d+) log i/o's/second"
+        )
 
         try:
             result = re.compile(regex).findall(text)[0]
 
-            dict['log_sequence_number'] = result[0]
-            dict['log_flushed_up_to']   = result[1]
-            dict['last_checkpoint_at']  = result[2]
-            dict['pending_log_writes']  = result[3]
-            dict['pending_chkp_writes'] = result[4]
-            dict['log_io_done']         = result[5]
-            dict['log_io_per_sec']      = result[6]
+            _dict['log_sequence_number'] = result[0]
+            _dict['log_flushed_up_to']   = result[1]
+            _dict['last_checkpoint_at']  = result[2]
+            _dict['pending_log_writes']  = result[3]
+            _dict['pending_chkp_writes'] = result[4]
+            _dict['log_io_done']         = result[5]
+            _dict['log_io_per_sec']      = result[6]
 
         except:
             pass
 
-        return dict
+        return _dict
 
-    def parse_bp_and_mem(self, text):
+    @staticmethod
+    def parse_bp_and_mem(text):
         """
         ----------------------
         BUFFER POOL AND MEMORY
@@ -479,74 +489,75 @@ class InnoDBParse:
         LRU len: 14482, unzip_LRU len: 12046
         I/O sum[0]:cur[0], unzip sum[0]:cur[0]
         """
-        dict = {}
+        _dict = {}
         regex = (
-                "Total memory allocated (\d+); in additional pool allocated (\d+)\n"
-                "Dictionary memory allocated (\d+)\n"
-                "Buffer pool size\s+(\d+)\n"
-                "Free buffers\s+(\d+)\n"
-                "Database pages\s+(\d+)\n"
-                "Old database pages\s+(\d+)\n"
-                "Modified db pages\s+(\d+)\n"
-                "Pending reads (\d+)\n"
-                "Pending writes: LRU (\d+), flush list (\d+), single page (\d+)\n"
-                "Pages made young (\d+), not young (\d+)\n"
-                "(\d+\.\d+) youngs/s, (\d+\.\d+) non-youngs/s\n"
-                "Pages read (\d+), created (\d+), written (\d+)\n"
-                "(\d+\.\d+) reads/s, (\d+\.\d+) creates/s, (\d+\.\d+) writes/s\n"
-                "Buffer pool hit rate (\d+) / (\d+), young-making rate (\d+) / (\d+) not (\d+) / (\d+)\n"
-                "Pages read ahead (\d+\.\d+)/s, evicted without access (\d+\.\d+)/s, Random read ahead (\d+\.\d+)/s\n"
-                "LRU len: (\d+), unzip_LRU len: (\d+)\n"
-                "I/O sum\[(\d+)\]:cur\[(\d+)\], unzip sum\[(\d+)\]:cur\[(\d+)\]"
-                )
+            r"Total memory allocated (\d+); in additional pool allocated (\d+)\n"
+            r"Dictionary memory allocated (\d+)\n"
+            r"Buffer pool size\s+(\d+)\n"
+            r"Free buffers\s+(\d+)\n"
+            r"Database pages\s+(\d+)\n"
+            r"Old database pages\s+(\d+)\n"
+            r"Modified db pages\s+(\d+)\n"
+            r"Pending reads (\d+)\n"
+            r"Pending writes: LRU (\d+), flush list (\d+), single page (\d+)\n"
+            r"Pages made young (\d+), not young (\d+)\n"
+            r"(\d+\.\d+) youngs/s, (\d+\.\d+) non-youngs/s\n"
+            r"Pages read (\d+), created (\d+), written (\d+)\n"
+            r"(\d+\.\d+) reads/s, (\d+\.\d+) creates/s, (\d+\.\d+) writes/s\n"
+            r"Buffer pool hit rate (\d+) / (\d+), young-making rate (\d+) / (\d+) not (\d+) / (\d+)\n"
+            r"Pages read ahead (\d+\.\d+)/s, evicted without access (\d+\.\d+)/s, Random read ahead (\d+\.\d+)/s\n"
+            r"LRU len: (\d+), unzip_LRU len: (\d+)\n"
+            r"I/O sum\[(\d+)\]:cur\[(\d+)\], unzip sum\[(\d+)\]:cur\[(\d+)\]"
+        )
 
         try:
             result = re.compile(regex).findall(text)[0]
 
-            dict['total_memory_allocated']               = result[0]
-            dict['additional_pool_allocated']            = result[1]
-            dict['dictionary_memory_allocated']          = result[2]
-            dict['buffer_pool_size']                     = result[3]
-            dict['free_buffers']                         = result[4]
-            dict['database_pages']                       = result[5]
-            dict['old_database_pages']                   = result[6]
-            dict['modified_database_pages']              = result[7]
-            dict['pending_reads']                        = result[8]
-            dict['pending_writes_lru']                   = result[9]
-            dict['pending_writes_flush_list']            = result[10]
-            dict['pending_writes_single_page']           = result[11]
-            dict['pages_made_young']                     = result[12]
-            dict['pages_made_not_young']                 = result[13]
-            dict['pages_made_youngs_per_sec']            = result[14]
-            dict['pages_made_non_youngs_per_sec']        = result[15]
-            dict['pages_read']                           = result[16]
-            dict['pages_created']                        = result[17]
-            dict['pages_written']                        = result[18]
-            dict['pages_reads_per_sec']                  = result[19]
-            dict['pages_creates_per_sec']                = result[20]
-            dict['pages_writes_per_sec']                 = result[21]
-            dict['buffer_pool_hitrate_numerator']        = result[22]
-            dict['buffer_pool_hitrate_denominator']      = result[23]
-            dict['young_making_rate_numerator']          = result[24]
-            dict['young_making_rate_denominator']        = result[25]
-            dict['young_making_rate_not_numerator']      = result[26]
-            dict['young_making_rate_not_denominator']    = result[27]
-            dict['pages_read_ahead_per_sec']             = result[28]
-            dict['pages_evicted_without_access_per_sec'] = result[29]
-            dict['random_read_ahead_per_sec']            = result[30]
-            dict['lru_len']                              = result[31]
-            dict['unzip_lru_len']                        = result[32]
-            dict['io_sum']                               = result[33]
-            dict['io_sum_cur']                           = result[34]
-            dict['unzip_sum']                            = result[35]
-            dict['unzip_sum_cur']                        = result[36]
+            _dict['total_memory_allocated']               = result[0]
+            _dict['additional_pool_allocated']            = result[1]
+            _dict['dictionary_memory_allocated']          = result[2]
+            _dict['buffer_pool_size']                     = result[3]
+            _dict['free_buffers']                         = result[4]
+            _dict['database_pages']                       = result[5]
+            _dict['old_database_pages']                   = result[6]
+            _dict['modified_database_pages']              = result[7]
+            _dict['pending_reads']                        = result[8]
+            _dict['pending_writes_lru']                   = result[9]
+            _dict['pending_writes_flush_list']            = result[10]
+            _dict['pending_writes_single_page']           = result[11]
+            _dict['pages_made_young']                     = result[12]
+            _dict['pages_made_not_young']                 = result[13]
+            _dict['pages_made_youngs_per_sec']            = result[14]
+            _dict['pages_made_non_youngs_per_sec']        = result[15]
+            _dict['pages_read']                           = result[16]
+            _dict['pages_created']                        = result[17]
+            _dict['pages_written']                        = result[18]
+            _dict['pages_reads_per_sec']                  = result[19]
+            _dict['pages_creates_per_sec']                = result[20]
+            _dict['pages_writes_per_sec']                 = result[21]
+            _dict['buffer_pool_hitrate_numerator']        = result[22]
+            _dict['buffer_pool_hitrate_denominator']      = result[23]
+            _dict['young_making_rate_numerator']          = result[24]
+            _dict['young_making_rate_denominator']        = result[25]
+            _dict['young_making_rate_not_numerator']      = result[26]
+            _dict['young_making_rate_not_denominator']    = result[27]
+            _dict['pages_read_ahead_per_sec']             = result[28]
+            _dict['pages_evicted_without_access_per_sec'] = result[29]
+            _dict['random_read_ahead_per_sec']            = result[30]
+            _dict['lru_len']                              = result[31]
+            _dict['unzip_lru_len']                        = result[32]
+            _dict['io_sum']                               = result[33]
+            _dict['io_sum_cur']                           = result[34]
+            _dict['unzip_sum']                            = result[35]
+            _dict['unzip_sum_cur']                        = result[36]
 
         except:
             pass
 
-        return dict
+        return _dict
 
-    def parse_row_operations(self, text):
+    @staticmethod
+    def parse_row_operations(text):
         """
         --------------
         ROW OPERATIONS
@@ -557,37 +568,37 @@ class InnoDBParse:
         Number of rows inserted 3008242, updated 186007, deleted 859973, read 73110170
         3.37 inserts/s, 0.12 updates/s, 0.00 deletes/s, 10.25 reads/s
         """
-        dict = {}
+        _dict = {}
         regex = (
-                "(\d+) queries inside InnoDB, (\d+) queries in queue\n"
-                "(\d+) read views open inside InnoDB\n"
-                "Main thread process no. (\d+), id (\d+), state: (\S+)\n"
-                "Number of rows inserted (\d+), updated (\d+), deleted (\d+), read (\d+)\n"
-                "(\d+\.\d+) inserts/s, (\d+\.\d+) updates/s, (\d+\.\d+) deletes/s, (\d+\.\d+) reads/s"
-                )
+            r"(\d+) queries inside InnoDB, (\d+) queries in queue\n"
+            r"(\d+) read views open inside InnoDB\n"
+            r"Main thread process no. (\d+), id (\d+), state: (\S+)\n"
+            r"Number of rows inserted (\d+), updated (\d+), deleted (\d+), read (\d+)\n"
+            r"(\d+\.\d+) inserts/s, (\d+\.\d+) updates/s, (\d+\.\d+) deletes/s, (\d+\.\d+) reads/s"
+        )
 
         try:
             result = re.compile(regex).findall(text)[0]
 
-            dict['queries_inside']          = result[0]
-            dict['queries_in_queue']        = result[1]
-            dict['views_inside']            = result[2]
-            dict['main_thread_process_no']  = result[3]
-            dict['main_thread_id']          = result[4]
-            dict['main_thread_state']       = result[5]
-            dict['number_of_rows_inserted'] = result[6]
-            dict['number_of_rows_updated']  = result[7]
-            dict['number_of_rows_deleted']  = result[8]
-            dict['number_of_rows_read']     = result[9]
-            dict['inserted_per_sec']        = result[10]
-            dict['updates_per_sec']         = result[11]
-            dict['deletes_per_sec']         = result[12]
-            dict['reads_per_sec']           = result[13]
+            _dict['queries_inside']          = result[0]
+            _dict['queries_in_queue']        = result[1]
+            _dict['views_inside']            = result[2]
+            _dict['main_thread_process_no']  = result[3]
+            _dict['main_thread_id']          = result[4]
+            _dict['main_thread_state']       = result[5]
+            _dict['number_of_rows_inserted'] = result[6]
+            _dict['number_of_rows_updated']  = result[7]
+            _dict['number_of_rows_deleted']  = result[8]
+            _dict['number_of_rows_read']     = result[9]
+            _dict['inserted_per_sec']        = result[10]
+            _dict['updates_per_sec']         = result[11]
+            _dict['deletes_per_sec']         = result[12]
+            _dict['reads_per_sec']           = result[13]
 
         except:
             pass
 
-        return dict
+        return _dict
 
 class MySQLItem(base.ItemBase):
     """
