@@ -36,10 +36,11 @@ Each component corresponds to each template.
 
 | component | content | zabbix template |
 |-----------|---------|-----------------|
-| (default) | get mysql version and check mysql health, and discovery number of tables| _MySQL_5.5_general.xml |
+| (default) | get mysql version and check mysql health| _MySQL_5.5_general.xml |
 | global_variables | get information by `SHOW GLOBAL VARIABLES`| _MySQL_5.5_variables.xml |
 | global_status | get information by `SHOW GLOBAL STATUS` | _MySQL_5.5_status.xml |
 | innodb_status | get information by `SHOW ENGINE INNODB STATUS` | _MySQL_5.5_innodb.xml |
 | slave_status | get information by `SHOW SLAVE STATUS` | _MySQL_5.5_slave.xml |
+| table_count | discovery number of tables in database | _MySQL_5.5_general.xml |
 
 You can select component for mysql monitoring. Set `components = ` in your mysql.cfg.  
