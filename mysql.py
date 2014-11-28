@@ -1,7 +1,7 @@
 # -*- encoding: utf-8 -*-
 # pylint: disable=C0111,C0301,R0903,C0326,W0702
 
-__VERSION__ = '0.1.0'
+__VERSION__ = '0.1.1'
 
 import re
 import MySQLdb
@@ -105,19 +105,6 @@ class ConcreteJob(base.JobBase):
             ''.format(key=key, value=value)
         )
 
-    def _enqueue_lld(self, key, value):
-
-        item = base.DiscoveryItem(
-            key=key,
-            value=value,
-            host=self.options['hostname']
-        )
-        self.queue.put(item, block=False)
-        self.logger.debug(
-            'Inserted to lld queue {key}:{value}'
-            ''.format(key=key, value=str(value))
-        )
-
     def get_version(self, conn):
 
         cursor = conn.cursor()
@@ -170,12 +157,9 @@ class ConcreteJob(base.JobBase):
         cursor.execute('SHOW SLAVE STATUS;')
 
         if cursor.rowcount > 0:
-            self._enqueue('mysql.role', 'slave')
             column = [c[0].lower() for c in cursor.description]
             status = dict(zip(column, cursor.fetchone()))
             self._adjust_queue('slave_status', status)
-        else:
-            self._enqueue('mysql.role', 'master')
 
         cursor.close()
 
@@ -188,11 +172,29 @@ class ConcreteJob(base.JobBase):
 
         _ignore_databases = ['information_schema', 'performance_schema', 'test', 'mysql']
 
+        _dict = dict()
         for _db in result.keys():
             if _db in _ignore_databases:
                 continue
             else:
-                self._enqueue_lld(_db, result[_db])
+                _dict[_db] = result[_db]
+
+        # enqueue lld meta data
+        ditem = base.DiscoveryItem(
+            key='mysql.lld.table_count',
+            value=[
+                {'{#DBNAME}': _dbname} for _dbname in _dict.keys()
+            ],
+            host=self.options['hostname']
+        )
+        self.queue.put(ditem, block=False)
+        self.logger.debug(
+            'Inserted to queue LLD data #DBNAME : {db}'
+            ''.format(db=_dict.keys())
+        )
+
+        # enqueue lld value
+        self._adjust_queue('lld.table_count', _dict)
 
 
 class InnoDBParse(object):
@@ -212,6 +214,17 @@ class InnoDBParse(object):
         self.results['log']                    = self.parse_log(parsed['LOG'])
         self.results['buffer_pool_and_memory'] = self.parse_bp_and_mem(parsed['BUFFER POOL AND MEMORY'])
         self.results['row_operations']         = self.parse_row_operations(parsed['ROW OPERATIONS'])
+
+        self.results['latest_error'] = {}
+        if 'LATEST FOREIGN KEY ERROR' in parsed:
+            self.results['latest_error']['latest_foreign_key_error'] = 1
+        else:
+            self.results['latest_error']['latest_foreign_key_error'] = 0
+
+        if 'LATEST DETECTED DEADLOCK' in parsed:
+            self.results['latest_error']['latest_detected_deadlock'] = 1
+        else:
+            self.results['latest_error']['latest_detected_deadlock'] = 0
 
     @staticmethod
     def parse_innodb_status(innodb_status):
