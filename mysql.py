@@ -27,11 +27,11 @@ class ConcreteJob(base.JobBase):
         # ping item
         self.ping()
 
+        # try to connect and send "mysql.alive"
         conn = self.mysql_connect()
 
         # get version
-        if 'version' in self.components:
-            self.get_version(conn)
+        self.get_version(conn)
 
         # get global variables
         if 'global_variables' in self.components:
