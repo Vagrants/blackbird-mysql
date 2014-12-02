@@ -79,6 +79,7 @@ class ConcreteJob(base.JobBase):
                           error=_ex)
             )
             self._enqueue('mysql.alive', 0)
+            # TODO raise is not good
             raise
 
         self._enqueue('mysql.alive', 1)
